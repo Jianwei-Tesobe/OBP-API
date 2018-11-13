@@ -92,6 +92,7 @@ import javax.mail.internet.MimeMessage
 import net.liftweb.common._
 import net.liftweb.db.DBLogEntry
 import net.liftweb.http._
+import net.liftweb.http.provider.HTTPContext
 import net.liftweb.mapper._
 import net.liftweb.sitemap.Loc._
 import net.liftweb.sitemap._
@@ -107,7 +108,7 @@ class Boot extends MdcLoggable {
   
   def boot {
 
-    val contextPath = LiftRules.context.path
+    val contextPath = Option(LiftRules.context).map(_.path).getOrElse("")
     val propsPath = tryo{Box.legacyNullTest(System.getProperty("props.resource.dir"))}.toIterable.flatten
 
     if (Props.mode == Props.RunModes.Development) logger.info("OBP-API Props all fields : \n" + Props.props.mkString("\n"))
