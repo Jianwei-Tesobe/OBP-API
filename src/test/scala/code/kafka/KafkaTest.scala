@@ -1,6 +1,7 @@
 package code.kafka
 
 import bootstrap.liftweb.Boot
+import code.bankconnectors.vMar2017.{InboundBank, InboundStatusMessage}
 import code.bankconnectors.vSept2018._
 import code.util.Helper.MdcLoggable
 import net.liftweb.json
@@ -10,6 +11,7 @@ import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
 import org.scalatest.{FeatureSpec, _}
 
+import scala.collection.immutable.List
 import scala.concurrent.duration._
 import scala.concurrent.Await
 
@@ -49,23 +51,30 @@ class KafkaTest extends FeatureSpec with EmbeddedKafka with KafkaHelper
 
 
         scenario("Send and retrieve api message") {
-//          runWithKafka {
+          runWithKafka {
             When("send a string api message")
             val topics = Topics.createTopicByClassName("OutboundGetBanks")
-            val inBound = InboundGetBanks(AuthInfo(), Status("", Nil), Nil)
+            val emptyStatusMessage = InboundStatusMessage("", "", "", "")
+            val inBound = InboundGetBanks(AuthInfo(), Status("", List(emptyStatusMessage)), List(InboundBank("1", "2", "3", "4")))
 
           val req = OutboundGetBanks(AuthInfo())
           val inBoundStr = json.compactRender(Extraction.decompose(inBound))
 
-            val eventualValue = processToFuture[OutboundGetBanks](req)
-//            KafkaMappedConnector_vSept2018.getBanks(None)
-            Thread.sleep(1000)
-//            val tuple = consumeFirstKeyedMessageFrom[String, String](topics.request)
-            publishToKafka(topics.response, "1_uuid", inBoundStr)
-            Await.result(eventualValue, (20 second))
-            val serializable = eventualValue.value.getOrElse("")
+//            val eventualValue = KafkaMappedConnector_vSept2018.processToBox[OutboundGetBanks](req)
+//            val eventualValue = KafkaMappedConnector_vSept2018.getBanksFuture(None)
+          val eventualValue = processToFuture[OutboundGetBanks](req)
+//            Thread.sleep(1000)
+            val keyAndPayload = consumeFirstKeyedMessageFrom[String, String](topics.request)
+            println("xxx:"+keyAndPayload)
+            publishToKafka(topics.response, keyAndPayload._1, inBoundStr)
+            Await.result(eventualValue, (10 second))
+            val serializable = eventualValue.value.getOrElse("").extract[InboundGetBanks]
             println(serializable + "-----------------------------------------------")
-//          }
+          }
         }
+     
+//     connector=kafka_vSept2018
+//api_instance_id=1
+//remotedata.timeout=30
   }
 }
