@@ -74,6 +74,7 @@ import net.liftweb.json._
 import net.liftweb.util.Helpers._
 import net.liftweb.util.{Helpers, Props, StringHelpers}
 
+import scala.collection.JavaConverters
 import scala.collection.JavaConverters._
 import scala.collection.immutable.Nil
 import scala.collection.mutable.ArrayBuffer
@@ -2156,6 +2157,18 @@ Returns a string showed to the developer
   val isSandboxMode: Boolean = (APIUtil.getPropsValue("connector").openOrThrowException(attemptedToOpenAnEmptyBox).toString).equalsIgnoreCase("mapped")
 
   /**
+    * Props key value source setting must before first call Props.get method.
+    * we want Props.get value source priority as: System.getProperties() > System.getenv() > props file
+    * current logic should be called very early, the getPropsValue(nameOfProperty: String) is indeed the "first place".
+    */
+  lazy val initPropsBeforeFirstUse = {
+    val systemProperties = System.getProperties().asInstanceOf[java.util.Map[String, String]]
+    val propertiesProvider = JavaConverters.mapAsScalaMap(systemProperties).toMap
+    val envProvider = JavaConverters.mapAsScalaMap(System.getenv()).toMap
+    Props.prependProvider(envProvider)
+    Props.prependProvider(propertiesProvider)
+  }
+  /**
     * This function is implemented in order to support encrypted values in props file.
     * Please note that some value is considered as encrypted if has an encryption mark property in addition to regular props value in props file e.g
     *  db.url=Helpers.base64Encode(SOME_ENCRYPTED_VALUE)
@@ -2167,6 +2180,7 @@ Returns a string showed to the developer
     * @return Decrypted value of a property
     */
   def getPropsValue(nameOfProperty: String): Box[String] = {
+    initPropsBeforeFirstUse
     (Props.get(nameOfProperty), Props.get(nameOfProperty + ".is_encrypted"), Props.get(nameOfProperty + ".is_obfuscated") ) match {
       case (Full(base64PropsValue), Full(isEncrypted), Empty)  if isEncrypted == "true" =>
         val decryptedValueAsString = RSAUtil.decrypt(base64PropsValue)
