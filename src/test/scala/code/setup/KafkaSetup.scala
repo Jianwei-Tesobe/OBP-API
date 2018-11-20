@@ -33,33 +33,29 @@ trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    KafkaConsumer.primaryConsumer.started = true
-    KafkaConsumer.primaryConsumer.complete()
-    new Boot().boot
+    EmbeddedKafka.start()
+    createCustomTopic("Request", Map.empty, 10, 1)
+    createCustomTopic("Response", Map.empty, 10, 1)
+    if(!KafkaConsumer.primaryConsumer.started){
+      new Boot().boot
+    }
   }
 
+  override def afterAll(): Unit = {
+    super.afterAll()
+    EmbeddedKafka.stop()
+  }
 
   def runWithKafka[U](inBound: AnyRef, waitTime: Duration = (10 second))(runner: => U): U = {
-    KafkaConsumer.primaryConsumer.started = false
-    KafkaConsumer.primaryConsumer.completed = false
-
     try {
-      EmbeddedKafka.start() //TODO should in beforeEvery and afterEvery, but they are not called, strange.
-      createCustomTopic("Request", Map.empty, 10, 1)
-      createCustomTopic("Response", Map.empty, 10, 1)
-      KafkaConsumer.primaryConsumer.start()
-
       // here is async, this means response is not send before request
       dispathResponse(inBound)
       runner
-    } finally {
-      //TODO if not stop NorthSideConsumer, when EmbeddedKafka stop, will cause continue fetch
-      // message and has error message in console. but if stop like follow two lines, will can't restart again,
-      // SO can't continue test two scenarios
-
-//      KafkaConsumer.primaryConsumer.complete()
-//      Thread.sleep(150)
-      EmbeddedKafka.stop()
+    } catch {
+      case e: Throwable => { // clean kakfa message
+        consumeNumberKeyedMessagesFromTopics(requestTopics, 1, true)
+        throw e
+      }
     }
   }
   def runWithKafkaFuture[U](inBound: AnyRef, waitTime: Duration = (10 second))(runner: => Future[U]): U = {
