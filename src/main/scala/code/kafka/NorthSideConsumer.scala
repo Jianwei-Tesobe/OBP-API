@@ -78,8 +78,8 @@ class NorthSideConsumer[K, V](brokers: String, topic: String, group: String, key
   val consumer = new KafkaConsumer[K, V](consumerProperties(brokers, group, keyDeserealizer, valueDeserealizer))
   consumer.subscribe(listOfTopics.map(t => s"to.${clientId}.caseclass.$t"))
 
-  var completed = false
-  var started = false
+  @volatile var completed = false
+  @volatile var started = false
 
   def complete(): Unit = {
     completed = true
