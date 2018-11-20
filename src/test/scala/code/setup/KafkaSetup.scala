@@ -53,8 +53,12 @@ trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper
       dispathResponse(inBound)
       runner
     } finally {
-      KafkaConsumer.primaryConsumer.complete()
-      Thread.sleep(150)
+      //TODO if not stop NorthSideConsumer, when EmbeddedKafka stop, will cause continue fetch
+      // message and has error message in console. but if stop like follow two lines, will can't restart again,
+      // SO can't continue test two scenarios
+
+//      KafkaConsumer.primaryConsumer.complete()
+//      Thread.sleep(150)
       EmbeddedKafka.stop()
     }
   }
