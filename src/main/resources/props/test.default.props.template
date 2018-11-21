@@ -29,6 +29,8 @@ connector=mapped
 #defaults to "localhost:2181" if not set
 #kafka.zookeeper_host=localhost:2181
 #kafka.bootstrap_hosts=localhost:9092
+## api client instance id, should be integer
+api_instance_id=1
 
 #if using kafka, the following is mandatory
 #kafka.request_topic=Request
@@ -114,3 +116,16 @@ allow_public_views =true
 #external.hostname=apisandbox.openbankproject.com
 #external.https=true
 #external.port=8080
+
+## Enable remote Akka actor for data split
+## If set to true, must set hostname and port
+## of remote machine
+#remotedata.loglevel=INFO
+remotedata.timeout=30
+#remotedata.enable=true
+#remotedata.hostname=127.0.0.1
+#remotedata.port=2662
+## Arbitrary value used in order to assure us that
+## remote and local sides are paired well
+## Only needed when remotedata.enable=true
+#remotedata.secret=CHANGE_ME
