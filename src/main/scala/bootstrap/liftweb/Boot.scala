@@ -92,6 +92,7 @@ import javax.mail.internet.MimeMessage
 import net.liftweb.common._
 import net.liftweb.db.DBLogEntry
 import net.liftweb.http._
+import net.liftweb.http.provider.HTTPContext
 import net.liftweb.mapper._
 import net.liftweb.sitemap.Loc._
 import net.liftweb.sitemap._
@@ -107,7 +108,7 @@ class Boot extends MdcLoggable {
   
   def boot {
 
-    val contextPath = LiftRules.context.path
+    val contextPath = Option(LiftRules.context).map(_.path).getOrElse("")
     val propsPath = tryo{Box.legacyNullTest(System.getProperty("props.resource.dir"))}.toIterable.flatten
 
     if (Props.mode == Props.RunModes.Development) logger.info("OBP-API Props all fields : \n" + Props.props.mkString("\n"))
@@ -450,23 +451,23 @@ class Boot extends MdcLoggable {
       case _ => throw new Exception(s"Unexpected error occurs during Akka sanity check!")
     }
 
-    Connector.connector.vend.getAdapterInfo(None) match {
-      case Empty =>
-        logger.info("ADAPTER INFO - Adapter is not implemented.")
-      case Full((obj@InboundAdapterInfoInternal(errorCode, backendMessages, name, version, git_commit, date),_)) =>
-        logger.info("ADAPTER INFO - errorCode: " + errorCode)
-        logger.info("ADAPTER INFO - backendMessages: " + backendMessages)
-        logger.info("ADAPTER INFO - name: " + name)
-        logger.info("ADAPTER INFO - version: " + version)
-        logger.info("ADAPTER INFO - git_commit: " + git_commit)
-        logger.info("ADAPTER INFO - date: " + date)
-      case Failure(msg, t, c) =>
-        logger.info("ADAPTER INFO - " + msg)
-        logger.info("ADAPTER INFO - " + t)
-        logger.info("ADAPTER INFO - " + c)
-      case _     =>
-        logger.info("ADAPTER INFO - Unknown status.")
-    }
+//    Connector.connector.vend.getAdapterInfo(None) match {
+//      case Empty =>
+//        logger.info("ADAPTER INFO - Adapter is not implemented.")
+//      case Full((obj@InboundAdapterInfoInternal(errorCode, backendMessages, name, version, git_commit, date),_)) =>
+//        logger.info("ADAPTER INFO - errorCode: " + errorCode)
+//        logger.info("ADAPTER INFO - backendMessages: " + backendMessages)
+//        logger.info("ADAPTER INFO - name: " + name)
+//        logger.info("ADAPTER INFO - version: " + version)
+//        logger.info("ADAPTER INFO - git_commit: " + git_commit)
+//        logger.info("ADAPTER INFO - date: " + date)
+//      case Failure(msg, t, c) =>
+//        logger.info("ADAPTER INFO - " + msg)
+//        logger.info("ADAPTER INFO - " + t)
+//        logger.info("ADAPTER INFO - " + c)
+//      case _     =>
+//        logger.info("ADAPTER INFO - Unknown status.")
+//    }
 
     Migration.database.generateAndPopulateMissingCustomerUUIDs()
 
