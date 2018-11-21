@@ -1,10 +1,14 @@
 package code.setup
 
 import bootstrap.liftweb.Boot
-import code.kafka.{KafkaConsumer, KafkaHelper, NorthSideConsumer, Topics}
+import code.actorsystem.ObpActorSystem
+import code.bankconnectors.Connector
+import code.kafka._
 import code.util.Helper.MdcLoggable
 import net.liftweb.json
 import net.liftweb.json.{DefaultFormats, Extraction}
+import net.liftweb.util.{Props, Vendor}
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import net.manub.embeddedkafka.{EmbeddedKafka, EmbeddedKafkaConfig}
 import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
@@ -33,17 +37,37 @@ trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper
 
   override def beforeAll(): Unit = {
     super.beforeAll()
+
     EmbeddedKafka.start()
     createCustomTopic("Request", Map.empty, 10, 1)
     createCustomTopic("Response", Map.empty, 10, 1)
-    if(!KafkaConsumer.primaryConsumer.started){
+    if(!KafkaConsumer.primaryConsumer.started) {
       new Boot().boot
     }
+
+     { //TODO temp solution to start north
+       val actorSystem = ObpActorSystem.startLocalActorSystem()
+      logger.info(s"KafkaHelperActors.startLocalKafkaHelperWorkers( ${actorSystem} ) starting")
+      KafkaHelperActors.startLocalKafkaHelperWorkers(actorSystem)
+      // Start North Side Consumer if it's not already started
+      KafkaConsumer.primaryConsumer.start()
+    }
+
+    //change connector instance to kafka connector
+    //val kafkaConnectorName = Props.get("kafka.connector", "kafka_vSept2018")
+    val kafkaConnectorName = "kafka_vSept2018"
+    val kafkaVendor = Connector.getConnectorInstance(kafkaConnectorName)
+    Connector.connector.default.set(kafkaVendor)
   }
 
   override def afterAll(): Unit = {
     super.afterAll()
     EmbeddedKafka.stop()
+    //reback original connector
+//    val connectorName = Props.get("connector", "mapped")
+    val connectorName = "mapped"
+    val oldConnectorVender = Connector.getConnectorInstance(connectorName)
+    Connector.connector.default.set(oldConnectorVender)
   }
 
   def runWithKafka[U](inBound: AnyRef, waitTime: Duration = (10 second))(runner: => U): U = {
