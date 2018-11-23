@@ -1,19 +1,20 @@
 package code.setup
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 import bootstrap.liftweb.Boot
 import code.actorsystem.ObpActorSystem
+import code.api.util.{APIUtil, ApiVersion}
 import code.bankconnectors.Connector
 import code.kafka._
 import code.util.Helper.MdcLoggable
 import net.liftweb.json
 import net.liftweb.json.{DefaultFormats, Extraction}
-import net.liftweb.util.{Props, Vendor}
-
-import scala.concurrent.ExecutionContext.Implicits.global
 import net.manub.embeddedkafka.{EmbeddedKafka, EmbeddedKafkaConfig}
 import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
 import org.scalatest.{FeatureSpec, _}
 
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 
@@ -22,52 +23,59 @@ trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper
   with BeforeAndAfterAll
   with Matchers with MdcLoggable {
 
-
+  val kafkaTest = KafkaTest
 
   implicit val formats = DefaultFormats
-  implicit val config = EmbeddedKafkaConfig(kafkaPort = 9092) //TODO the port should read from test.default.props, but fail
   implicit val stringSerializer = new StringSerializer
   implicit val stringDeserializer = new StringDeserializer
+  //TODO the port should read from test.default.props, but fail
+  implicit val config = EmbeddedKafkaConfig(kafkaPort = 9092)
 
-  lazy val requestMapResponseTopics:Map[String, String] =  NorthSideConsumer.listOfTopics
+
+  lazy val requestMapResponseTopics: Map[String, String] = NorthSideConsumer.listOfTopics
     .map(Topics.createTopicByClassName)
     .map(pair => (pair.request, pair.response))
     .toMap
+
   lazy val requestTopics = requestMapResponseTopics.keySet
 
-  override def beforeAll(): Unit = {
-    super.beforeAll()
-
+  def doStart(): Unit = {
     EmbeddedKafka.start()
-    createCustomTopic("Request", Map.empty, 10, 1)
-    createCustomTopic("Response", Map.empty, 10, 1)
-    if(!KafkaConsumer.primaryConsumer.started) {
+    if (ObpActorSystem.obpActorSystem == null) {
       new Boot().boot
     }
+    createCustomTopic("Request", Map.empty, 10, 1)
+    createCustomTopic("Response", Map.empty, 10, 1)
 
-     { //TODO temp solution to start north
-       val actorSystem = ObpActorSystem.startLocalActorSystem()
-      logger.info(s"KafkaHelperActors.startLocalKafkaHelperWorkers( ${actorSystem} ) starting")
-      KafkaHelperActors.startLocalKafkaHelperWorkers(actorSystem)
-      // Start North Side Consumer if it's not already started
-      KafkaConsumer.primaryConsumer.start()
-    }
+    val actorSystem = ObpActorSystem.obpActorSystem
+    KafkaHelperActors.startLocalKafkaHelperWorkers(actorSystem)
+    // Start North Side Consumer if it's not already started
+    KafkaConsumer.primaryConsumer.start()
 
     //change connector instance to kafka connector
-    //val kafkaConnectorName = Props.get("kafka.connector", "kafka_vSept2018")
-    val kafkaConnectorName = "kafka_vSept2018"
+    val kafkaConnectorName = APIUtil.getPropsValue("kafka.connector", "kafka_vSept2018")
     val kafkaVendor = Connector.getConnectorInstance(kafkaConnectorName)
     Connector.connector.default.set(kafkaVendor)
   }
 
+  def doStop(): Unit = {
+    // stop NorthSideConsumer pull kafka message thread
+    KafkaConsumer.primaryConsumer.complete()
+    // wait for NorthSideConsumer stop finished, because NorthSideConsumer pull message timeout is 100ms
+    Thread.sleep(100)
+    ObpActorSystem.obpActorSystem.terminate()
+    System.out.println("Shutdown Hook is running !")
+    EmbeddedKafka.stop()
+  }
+
+  override def beforeAll(): Unit = {
+    super.beforeAll()
+    KafkaServer.doStart(this.doStart)
+  }
+
   override def afterAll(): Unit = {
     super.afterAll()
-    EmbeddedKafka.stop()
-    //reback original connector
-//    val connectorName = Props.get("connector", "mapped")
-    val connectorName = "mapped"
-    val oldConnectorVender = Connector.getConnectorInstance(connectorName)
-    Connector.connector.default.set(oldConnectorVender)
+    KafkaServer.doStopAfterAll(this.doStop)
   }
 
   def runWithKafka[U](inBound: AnyRef, waitTime: Duration = (10 second))(runner: => U): U = {
@@ -82,6 +90,7 @@ trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper
       }
     }
   }
+
   def runWithKafkaFuture[U](inBound: AnyRef, waitTime: Duration = (10 second))(runner: => Future[U]): U = {
     this.runWithKafka[U](inBound, waitTime) {
       Await.result(runner, waitTime)
@@ -96,7 +105,7 @@ trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper
     */
   def dispathResponse(inBound: AnyRef): Unit = {
     val inBoundStr = json.compactRender(Extraction.decompose(inBound))
-    Future{
+    Future {
       val requestKeyValue = consumeNumberKeyedMessagesFromTopics(requestTopics, 1, true)
       val (requestTopic, keyValueList) = requestKeyValue.find(_._2.nonEmpty).get
       val (key, _) = keyValueList.head
@@ -118,27 +127,47 @@ trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper
     value.extract[T]
   }
 
-  /**
-    * get response after call api
-    *
-    * @param inBound  inBound object that return from kafka
-    * @param waitTime max wait time to continue process after call the api
-    * @param apiCall  call api method
-    * @tparam T OutBound tye
-    * @tparam D api return concrete object in the api return Future
-    * @return extracted object from api future result
-    */
-  //  def getResponseByApi[T <: TopicTrait : ClassTag, D]
-  //    (inBound: AnyRef, waitTime: Duration = (10 second))
-  //    (apiCall: =>  Future[Box[(D, Option[CallContext])]]): Box[(D, Option[CallContext])] = {
-  //    return runWithKafka[T]() {
-  //      val futureResult =  apiCall
-  //      dispathResponse[T](inBound)
-  //      return Await.result(futureResult, waitTime)
-  //    }
-  //  }
-
-  //     connector=kafka_vSept2018
+  //connector=kafka_vSept2018
   //api_instance_id=1
   //remotedata.timeout=30
 }
+
+/**
+  * a tool of KafkaServer, make the EmbededKafka start once and stop before process finished
+  */
+object KafkaServer {
+
+  private val hasStarted = new AtomicBoolean(false)
+  private val hasRegistedShutdown = new AtomicBoolean(false)
+
+  /**
+    * only start kafka once
+    * @param start - function to do start kafka logic
+    */
+  def doStart(start: => Unit): Unit = {
+    if (this.hasStarted.compareAndSet(false, true)) start
+  }
+
+  /**
+    * register shutdown hook to do kafka stop
+    * @param stopAfterAll - stop kafka process
+    */
+  def doStopAfterAll(stopAfterAll: => Unit) = {
+    if (this.hasRegistedShutdown.compareAndSet(false, true)) {
+      Runtime.getRuntime().addShutdownHook(new Thread() {
+        override def run(): Unit = {
+          stopAfterAll
+        }
+      })
+    }
+  }
+}
+
+/**
+  * Test tags
+  * Example: To run tests with tag "kafakTest":
+  * 	mvn test -D kafakTest
+  *
+  *  This is made possible by the scalatest maven plugin
+  */
+object KafkaTest extends Tag("kafkaTest")

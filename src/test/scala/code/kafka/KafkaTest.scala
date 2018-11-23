@@ -12,7 +12,7 @@ import scala.collection.immutable.List
 class KafkaTest extends KafkaSetup {
 
   feature("Send and retrieve message") {
-    scenario("Send and retrieve message directly to and from kafka") {
+    scenario("Send and retrieve message directly to and from kafka", kafkaTest) {
       val emptyStatusMessage = InboundStatusMessage("", "", "", "")
       val inBound = InboundGetBanks(AuthInfo(), Status("", List(emptyStatusMessage)), List(InboundBank("1", "2", "3", "4")))
       When("send a OutboundGetBanks message")
@@ -24,7 +24,7 @@ class KafkaTest extends KafkaSetup {
       banks should be equals (inBound)
     }
 
-    scenario("Send and retrieve api message") {
+    scenario("Send and retrieve api message", kafkaTest) {
       When("send a OutboundGetBanks api message")
       val emptyStatusMessage = InboundStatusMessage("", "", "", "")
       val singleInboundBank = List(InboundBank("1", "2", "3", "4"))
