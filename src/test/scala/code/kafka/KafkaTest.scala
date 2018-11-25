@@ -6,10 +6,12 @@ import code.bankconnectors.vSept2018._
 import code.setup.KafkaSetup
 import net.liftweb.common.{Box, Full}
 import net.liftweb.json
+import net.liftweb.json.DefaultFormats
 
 import scala.collection.immutable.List
 
 class KafkaTest extends KafkaSetup {
+  implicit val formats = DefaultFormats
 
   feature("Send and retrieve message") {
     scenario("Send and retrieve message directly to and from kafka", kafkaTest) {

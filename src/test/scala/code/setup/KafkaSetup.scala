@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import bootstrap.liftweb.Boot
 import code.actorsystem.ObpActorSystem
-import code.api.util.{APIUtil, ApiVersion}
+import code.api.util.APIUtil
 import code.bankconnectors.Connector
 import code.kafka._
 import code.util.Helper.MdcLoggable
@@ -18,16 +18,12 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 
-trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper
-  with BeforeAndAfterEach with GivenWhenThen
+trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper with GivenWhenThen
   with BeforeAndAfterAll
   with Matchers with MdcLoggable {
 
   val kafkaTest = KafkaTest
 
-  implicit val formats = DefaultFormats
-  implicit val stringSerializer = new StringSerializer
-  implicit val stringDeserializer = new StringDeserializer
   //TODO the port should read from test.default.props, but fail
   implicit val config = EmbeddedKafkaConfig(kafkaPort = 9092)
 
@@ -78,53 +74,52 @@ trait KafkaSetup extends FeatureSpec with EmbeddedKafka with KafkaHelper
     KafkaServer.doStopAfterAll(this.doStop)
   }
 
-  def runWithKafka[U](inBound: AnyRef, waitTime: Duration = (10 second))(runner: => U): U = {
+  def runWithKafka[U](inBounds: AnyRef*)(runner: => U): U = {
+    assert(inBounds.size > 0, "send to kafka inBound objects count must great than 1.")
     try {
       // here is async, this means response is not send before request
-      dispathResponse(inBound)
+      dispathResponse(inBounds)
       runner
     } catch {
       case e: Throwable => { // clean kakfa message
+        implicit val stringSerializer = new StringSerializer
+        implicit val stringDeserializer = new StringDeserializer
         consumeNumberKeyedMessagesFromTopics(requestTopics, 1, true)
         throw e
       }
     }
   }
 
-  def runWithKafkaFuture[U](inBound: AnyRef, waitTime: Duration = (10 second))(runner: => Future[U]): U = {
-    this.runWithKafka[U](inBound, waitTime) {
+  def runWithKafkaFuture[U](inBounds: AnyRef*)(runner: => Future[U], waitTime: Duration = (10 second)): U = {
+    this.runWithKafka[U](inBounds) {
       Await.result(runner, waitTime)
     }
   }
 
   /**
-    * send an object to kafka as response
+    * send one or more objects to kafka as responses
     *
-    * @param inBound inBound object that will send to kafka as a response
-    * @tparam T Outbound type
+    * @param firstInBound - an inBound object that will send to kafka as a response, at lease send one inBound
+    * @param moreInBounds - any count of inBound objects that will send to kafka as response
     */
-  def dispathResponse(inBound: AnyRef): Unit = {
-    val inBoundStr = json.compactRender(Extraction.decompose(inBound))
-    Future {
+  def dispathResponse(inBounds: AnyRef*): Unit = {
+    assert(inBounds.size > 0, "send to kafka inBound objects count must great than 1.")
+
+    implicit val formats = DefaultFormats
+    implicit val stringSerializer = new StringSerializer
+    implicit val stringDeserializer = new StringDeserializer
+
+    val fetchRequestAndSendRespons = { inBound:AnyRef =>
       val requestKeyValue = consumeNumberKeyedMessagesFromTopics(requestTopics, 1, true)
       val (requestTopic, keyValueList) = requestKeyValue.find(_._2.nonEmpty).get
       val (key, _) = keyValueList.head
       val responseTopic = requestMapResponseTopics(requestTopic)
+      val inBoundStr = json.compactRender(Extraction.decompose(inBound))
       publishToKafka(responseTopic, key, inBoundStr)
     }
-  }
-
-  /**
-    * retrieve InBound object from Future
-    *
-    * @param response response Future
-    * @param waitTime wait time
-    * @tparam T InBound type
-    * @return InBOund object to do assert
-    */
-  def getInBound[T: Manifest](response: Future[json.JValue], waitTime: Duration = (10 second)) = {
-    val value = Await.result(response, waitTime)
-    value.extract[T]
+    val firstInBound::moreInBounds = List(inBounds:_*)
+    val firstFuture = Future(fetchRequestAndSendRespons(firstInBound))
+    (firstFuture /: moreInBounds) { (future, inBound)=> future.map(it => fetchRequestAndSendRespons(inBound))}
   }
 
   //connector=kafka_vSept2018
