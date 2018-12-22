@@ -2262,7 +2262,7 @@ trait APIMethods310 {
             }
             (_, callContext) <- NewStyle.function.getBank(bankId, callContext)
             
-            (accountApplication, _) <- NewStyle.function.getAccountApplicationById(accountApplicationId, callContext)
+            _ <- NewStyle.function.getAccountApplicationById(accountApplicationId, callContext)
             
             (accountApplication, _) <- NewStyle.function.updateAccountApplicationStatus(accountApplicationId, status, callContext)
             
