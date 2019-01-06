@@ -149,11 +149,7 @@ object KafkaServer {
     */
   def doStopAfterAll(stopAfterAll: => Unit) = {
     if (this.hasRegistedShutdown.compareAndSet(false, true)) {
-      Runtime.getRuntime().addShutdownHook(new Thread() {
-        override def run(): Unit = {
-          stopAfterAll
-        }
-      })
+      Runtime.getRuntime().addShutdownHook(new Thread(() => stopAfterAll))
     }
   }
 }
