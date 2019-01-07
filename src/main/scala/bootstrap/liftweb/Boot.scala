@@ -232,7 +232,7 @@ class Boot extends MdcLoggable {
 
     logger.debug(s"If you can read this, logging level is debug")
 
-    val actorSystem = ObpActorSystem.startLocalActorSystem()
+    val actorSystem = ObpActorSystem.startLocalActorSystem
 
     // where to search snippets
     LiftRules.addToPackages("code")
